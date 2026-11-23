@@ -30,6 +30,18 @@ td.l,th.l{text-align:left}
 .tag{padding:2px 8px;border-radius:99px;font-size:12px;color:#fff;white-space:nowrap}
 .scroll{overflow-x:auto}.hide{display:none}
 tfoot td{font-weight:600}
+tbody tr[data-i]{cursor:pointer}tbody tr[data-i]:hover td{background:var(--bg)}
+dialog{border:0;border-radius:14px;padding:0;width:min(780px,94vw);max-height:90vh;background:var(--card);color:var(--tx);box-shadow:0 20px 60px #0006}
+dialog::backdrop{background:#092a5a99}
+.mh{background:var(--navy);color:#fff;padding:16px 20px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.mh h3{margin:0;font:700 17px Sora,Inter,sans-serif}.mh button{background:none;border:0;color:#fff;font-size:22px;padding:0 4px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid var(--bd)}
+.mb{overflow:auto;max-height:calc(90vh - 150px);padding:4px 20px 20px}
+.mb h4{margin:16px 0 8px;font:700 13px Sora,Inter,sans-serif;color:var(--blue);text-transform:uppercase;letter-spacing:.04em}
+.kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px 16px}
+.kv div{border-bottom:1px solid var(--bd);padding-bottom:6px}.kv span{display:block;font-size:11px;color:var(--mut)}.kv b{font-weight:500;word-break:break-word}
+.fin{background:#f3f6fb;border:1px solid var(--bd);border-left:4px solid var(--blue);border-radius:8px;padding:12px 14px;white-space:normal}
+mark{background:#ffe9a8;padding:0 3px;border-radius:3px;font-weight:600}
 </style>
 </head>
 <body>
@@ -61,6 +73,9 @@ tfoot td{font-weight:600}
 <section id="v-tab" class="card scroll hide"><table id="t"></table></section>
 </div>
 </main>
+<dialog id="dlg"><div class="mh"><h3 id="mt"></h3><button id="mx" aria-label="Fechar">×</button></div>
+<div class="chips" id="mk"></div>
+<div class="mb"><h4>Informações do pedido</h4><div id="mi"></div><h4>Financeiro</h4><div class="fin" id="mf"></div></div></dialog>
 <script>
 const C={faturado:'var(--ok)',a_faturar:'var(--warn)',proximo_mes:'var(--next)',outros:'#8a93a5'};
 const N={faturado:'Já faturado',a_faturar:'A faturar (entregue)',proximo_mes:'Pendente p/ próximo mês',outros:'Outros'};
@@ -78,10 +93,10 @@ $('q').oninput=render;$('fs').onchange=render;
 function group(rows,key){const m={};rows.forEach(p=>{const k=p[key];m[k]??={faturado:0,a_faturar:0,proximo_mes:0,outros:0,n:0};m[k][p.situacao]+=p.valor;m[k].n++});return Object.entries(m)}
 const tot=v=>v.faturado+v.a_faturar+v.proximo_mes+v.outros;
 
-function setTable(head,rows,csv,foot){
-  view={head,rows,csv};
+function setTable(head,rows,csv,foot,items){
+  view={head,rows,csv,items};
   $('t').innerHTML='<thead><tr>'+head.map((h,i)=>`<th class="${h.l?'l':''}">${h.t||h}</th>`).join('')+'</tr></thead><tbody>'+
-    rows.map(r=>'<tr>'+r.map((c,i)=>`<td class="${head[i].l?'l':''}">${c}</td>`).join('')+'</tr>').join('')+'</tbody>'+(foot?'<tfoot><tr>'+foot.map((c,i)=>`<td class="${head[i].l?'l':''}">${c}</td>`).join('')+'</tr></tfoot>':'');
+    rows.map((r,ri)=>'<tr'+(items?` data-i="${ri}"`:'')+'>'+r.map((c,i)=>`<td class="${head[i].l?'l':''}">${c}</td>`).join('')+'</tr>').join('')+'</tbody>'+(foot?'<tfoot><tr>'+foot.map((c,i)=>`<td class="${head[i].l?'l':''}">${c}</td>`).join('')+'</tr></tfoot>':'');
 }
 
 function render(){
@@ -124,10 +139,21 @@ function render(){
     const NN={...N,cancelado:'Cancelado'};
     setTable([{t:'Pedido',l:1},{t:'Cliente',l:1},{t:'Empresa',l:1},{t:'Comercial',l:1},{t:'Entrega',l:1},{t:'Situação',l:1},'Valor'],
       L.map(p=>[esc(p.pedido),esc(p.cliente),esc(p.empresa),esc(p.comercial),esc(p.entrega),`<span class="tag" style="background:${C[p.situacao]||'var(--bad)'}">${NN[p.situacao]}</span>`,R(p.valor)]),
-      L.map(p=>[p.pedido,p.cliente,p.empresa,p.comercial,p.entrega,NN[p.situacao],p.valor]));
+      L.map(p=>[p.pedido,p.cliente,p.empresa,p.comercial,p.entrega,NN[p.situacao],p.valor]),null,L);
   }
 }
 
+const dlg=$('dlg');
+$('mx').onclick=()=>dlg.close();dlg.onclick=e=>{if(e.target===dlg)dlg.close()};
+$('t').onclick=e=>{const tr=e.target.closest('tr[data-i]');if(tr&&view.items)openPed(view.items[+tr.dataset.i])};
+function openPed(p){
+  const NN={...N,cancelado:'Cancelado'},det=p.detalhe||[];
+  $('mt').textContent=p.pedido+' — '+p.cliente;
+  $('mk').innerHTML=`<span class="tag" style="background:${C[p.situacao]||'var(--bad)'}">${NN[p.situacao]}</span><span>Valor no Monday: <b>${p.valor?R(p.valor):'não informado'}</b></span><span class="mut">Entrega: ${esc(p.entrega)} · ${esc(p.empresa)} · ${esc(p.comercial)}</span>`;
+  $('mi').innerHTML=det.length?'<div class="kv">'+det.map(([k,v])=>`<div><span>${esc(k)}</span><b>${esc(v).replace(/\n/g,'<br>')}</b></div>`).join('')+'</div>':'<p class="mut">Pedido não encontrado na planilha de lançamentos.</p>';
+  $('mf').innerHTML=p.financeiro?esc(p.financeiro).replace(/\n/g,'<br>').replace(/(R\$\s?[\d.,]+)/g,'<mark>$1</mark>'):'<span class="mut">Sem observação do financeiro.</span>';
+  dlg.showModal();
+}
 $('dl').onclick=()=>{
   const heads=view.head.map(h=>h.t||h);
   const cell=c=>{c=typeof c==='number'?String(c).replace('.',','):String(c);return /[;"\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c};
