@@ -26,6 +26,8 @@ for e in new:
     if not any(x["id"] == p["id"] for x in lst): lst.append(p)
 state["last_run"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 json.dump(state, open(ST, "w", encoding="utf-8"), ensure_ascii=False)
+if not new and os.path.exists(OUT):
+    print("sem NFs novas"); sys.exit(0)
 
 senha = open(os.path.expanduser("~/.painel_senha"), encoding="utf-8").read().strip()
 obj = {"atualizado_em": state["last_run"].replace("Z", "+00:00"), "nf": state["nf"]}
