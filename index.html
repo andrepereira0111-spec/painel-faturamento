@@ -39,7 +39,7 @@ dialog{border:0;border-radius:14px;padding:0;width:min(780px,94vw);max-height:90
 dialog::backdrop{background:#092a5a99}
 .mh{background:var(--navy);color:#fff;padding:16px 20px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
 .mh h3{margin:0;font:700 17px Sora,Inter,sans-serif}.mh button{background:none;border:0;color:#fff;font-size:22px;padding:0 4px}
-.chips{display:flex;gap:8px;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid var(--bd)}
+.chips a{color:var(--blue);font-weight:600}.chips{display:flex;gap:8px;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid var(--bd)}
 .mb{overflow:auto;max-height:calc(90vh - 150px);padding:4px 20px 20px}
 .mb h4{margin:16px 0 8px;font:700 13px Sora,Inter,sans-serif;color:var(--blue);text-transform:uppercase;letter-spacing:.04em}
 .kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px 16px}
@@ -81,7 +81,7 @@ mark{background:#ffe9a8;padding:0 3px;border-radius:3px;font-weight:600}
 </main>
 <dialog id="dlg"><div class="mh"><h3 id="mt"></h3><button id="mx" aria-label="Fechar">×</button></div>
 <div class="chips" id="mk"></div>
-<div class="mb"><h4>Informações do pedido</h4><div id="mi"></div><h4>Financeiro</h4><div class="fin" id="mf"></div></div></dialog>
+<div class="mb"><h4>Informações do pedido</h4><div id="mi"></div><h4>Financeiro</h4><div class="fin" id="mf"></div><div id="mn"></div></div></dialog>
 <script>
 const C={faturado:'var(--ok)',a_faturar:'var(--warn)',proximo_mes:'var(--next)',outros:'#8a93a5'};
 const N={faturado:'Já faturado',a_faturar:'A faturar (entregue)',proximo_mes:'Pendente p/ próximo mês',outros:'Outros'};
@@ -97,6 +97,7 @@ $('tabs').onclick=e=>{const k=e.target.dataset.k;if(k){tab=k;location.hash=k;ren
 $('mes').onchange=e=>{cur=localStorage.mes=e.target.value;render()};
 $('q').oninput=render;$('fs').onchange=render;
 
+const nfTxt=(p,plain)=>(p.nf||[]).map(n=>plain?(n.numero||n.arquivo):esc(n.numero||'NF')).join(', ');
 function group(rows,key){const m={};rows.forEach(p=>{const k=p[key];m[k]??={faturado:0,a_faturar:0,proximo_mes:0,outros:0,n:0};m[k][p.situacao]+=p.valor;m[k].n++});return Object.entries(m)}
 const tot=v=>v.faturado+v.a_faturar+v.proximo_mes+v.outros;
 
@@ -124,9 +125,10 @@ function render(){
     $('tot').textContent='— total '+R(T);
     $('bar').innerHTML=Object.keys(S).map(k=>`<div style="width:${S[k]/T*100}%;background:${C[k]}" title="${N[k]}: ${R(S[k])}"></div>`).join('');
     $('legend').innerHTML=Object.keys(S).filter(k=>S[k]).map(k=>`<span style="margin-right:14px"><i class="tag" style="background:${C[k]};padding:0 6px">&nbsp;</i> ${N[k]} ${R(S[k])}</span>`).join('');
-    const sv=P.filter(p=>p.valor===0),fp=P.filter(p=>p.situacao==='faturado'&&p.entrega.toUpperCase()!=='ENTREGUE'),nm=m.pedidos.filter(p=>!(p.detalhe||[]).length&&p.situacao!=='cancelado');
+    const ns=P.filter(p=>p.situacao==='faturado'&&!(p.nf||[]).length),nn=P.filter(p=>(p.situacao==='a_faturar'||p.situacao==='proximo_mes')&&(p.nf||[]).length),sv=P.filter(p=>p.valor===0),fp=P.filter(p=>p.situacao==='faturado'&&p.entrega.toUpperCase()!=='ENTREGUE'),nm=m.pedidos.filter(p=>!(p.detalhe||[]).length&&p.situacao!=='cancelado');
     const card=(f,n,t,sub)=>`<a class="card" href="#ped" data-f="${f}"><b>${n}</b> <span>${t}</span><br><span class="mut">${sub}</span></a>`;
-    $('att').innerHTML=card('semvalor',sv.length,'pedidos sem valor lançado','Entram como R$ 0 nos totais; o faturado real pode ser maior.')+
+    $('att').innerHTML=card('nfnao',nn.length,'com NF emitida, mas marcados NÃO faturados',R(nn.reduce((a,p)=>a+p.valor,0))+' provavelmente já faturados: falta marcar SIM no Monday.')+card('nfsem',ns.length,'marcados faturados, sem NF no Teams',R(ns.reduce((a,p)=>a+p.valor,0))+' sem comprovação da NF.')+
+      card('semvalor',sv.length,'pedidos sem valor lançado','Entram como R$ 0 nos totais; o faturado real pode ser maior.')+
       card('fatpend',fp.length,'faturados e ainda não entregues',R(fp.reduce((a,p)=>a+p.valor,0))+' marcados SIM antes da entrega.')+
       `<div class="card" style="border-left:4px solid var(--warn)"><b>${nm.length}</b> <span>sem lançamento na planilha</span><br><span class="mut">Sem detalhe/financeiro (ex.: retiradas).</span></div>`;
     view={head:['Situação','Pedidos','Valor'],rows:[],csv:Object.keys(S).map(k=>[N[k],cnt(k),S[k]])};
@@ -145,13 +147,13 @@ function render(){
       g.map(([k,v])=>[k,v.n,v.faturado,v.a_faturar,v.proximo_mes,tot(v)]),
       ['Total',P.length,R(S.faturado),R(S.a_faturar),R(S.proximo_mes),R(T)]);
   }else if(tab==='ped'){
-    const fs=$('fs');if(!fs.options.length){fs.innerHTML='<option value="">Todas as situações</option>'+Object.keys(N).map(k=>`<option value="${k}">${N[k]}</option>`).join('')+'<option value="cancelado">Cancelado</option><option value="semvalor">⚠ Sem valor lançado</option><option value="fatpend">⚠ Faturado e ainda não entregue</option>'}
+    const fs=$('fs');if(!fs.options.length){fs.innerHTML='<option value="">Todas as situações</option>'+Object.keys(N).map(k=>`<option value="${k}">${N[k]}</option>`).join('')+'<option value="cancelado">Cancelado</option><option value="semvalor">⚠ Sem valor lançado</option><option value="nfsem">⚠ Marcado faturado, sem NF</option><option value="nfnao">⚠ Tem NF, marcado NÃO faturado</option><option value="fatpend">⚠ Faturado e ainda não entregue</option>'}
     const q=$('q').value.toLowerCase(),f=fs.value;
-    const L=m.pedidos.filter(p=>(!f||p.situacao===f||(f==='semvalor'&&p.valor===0&&p.situacao!=='cancelado')||(f==='fatpend'&&p.situacao==='faturado'&&p.entrega.toUpperCase()!=='ENTREGUE'))&&(!f&&p.situacao==='cancelado'?false:true)&&(!q||(p.pedido+p.cliente).toLowerCase().includes(q))).sort((a,b)=>b.valor-a.valor);
+    const L=m.pedidos.filter(p=>(!f||p.situacao===f||(f==='semvalor'&&p.valor===0&&p.situacao!=='cancelado')||(f==='nfsem'&&p.situacao==='faturado'&&!(p.nf||[]).length)||(f==='nfnao'&&(p.situacao==='a_faturar'||p.situacao==='proximo_mes')&&(p.nf||[]).length)||(f==='fatpend'&&p.situacao==='faturado'&&p.entrega.toUpperCase()!=='ENTREGUE'))&&(!f&&p.situacao==='cancelado'?false:true)&&(!q||(p.pedido+p.cliente).toLowerCase().includes(q))).sort((a,b)=>b.valor-a.valor);
     const NN={...N,cancelado:'Cancelado'};
-    setTable([{t:'Pedido',l:1},{t:'Cliente',l:1},{t:'Empresa',l:1},{t:'Comercial',l:1},{t:'Entrega',l:1},{t:'Situação',l:1},'Valor'],
-      L.map(p=>[esc(p.pedido),esc(p.cliente),esc(p.empresa),esc(p.comercial),esc(p.entrega),`<span class="tag" style="background:${C[p.situacao]||'var(--bad)'}">${NN[p.situacao]}</span>`,R(p.valor)]),
-      L.map(p=>[p.pedido,p.cliente,p.empresa,p.comercial,p.entrega,NN[p.situacao],p.valor]),null,L);
+    setTable([{t:'Pedido',l:1},{t:'Cliente',l:1},{t:'Empresa',l:1},{t:'Comercial',l:1},{t:'Entrega',l:1},{t:'Situação',l:1},{t:'NF',l:1},'Valor'],
+      L.map(p=>[esc(p.pedido),esc(p.cliente),esc(p.empresa),esc(p.comercial),esc(p.entrega),`<span class="tag" style="background:${C[p.situacao]||'var(--bad)'}">${NN[p.situacao]}</span>`,nfTxt(p)||'<span class="mut">—</span>',R(p.valor)]),
+      L.map(p=>[p.pedido,p.cliente,p.empresa,p.comercial,p.entrega,NN[p.situacao],nfTxt(p,1),p.valor]),null,L);
   }
 }
 
@@ -162,8 +164,10 @@ function openPed(p){
   const NN={...N,cancelado:'Cancelado'},det=p.detalhe||[];
   $('mt').textContent=p.pedido+' — '+p.cliente;
   $('mk').innerHTML=`<span class="tag" style="background:${C[p.situacao]||'var(--bad)'}">${NN[p.situacao]}</span><span>Valor no Monday: <b>${p.valor?R(p.valor):'não informado'}</b></span><span class="mut">Entrega: ${esc(p.entrega)} · ${esc(p.empresa)} · ${esc(p.comercial)}</span>`;
+  $('mk').innerHTML+=(p.nf||[]).length?(p.nf).map(n=>`<a href="${encodeURI(n.url)}" target="_blank" rel="noopener" title="${esc(n.texto||'')}">📄 NF ${esc(n.numero||'')} ${n.emissao?'· '+n.emissao.split('-').reverse().join('/'):''}</a>`).join(' '):'<span class="mut">Sem NF no Teams</span>';
   $('mi').innerHTML=det.length?'<div class="kv">'+det.map(([k,v])=>`<div><span>${esc(k)}</span><b>${esc(v).replace(/\n/g,'<br>')}</b></div>`).join('')+'</div>':'<p class="mut">Pedido não encontrado na planilha de lançamentos.</p>';
   $('mf').innerHTML=p.financeiro?esc(p.financeiro).replace(/\n/g,'<br>').replace(/(R\$\s?[\d.,]+)/g,'<mark>$1</mark>'):'<span class="mut">Sem observação do financeiro.</span>';
+  $('mn').innerHTML=(p.nf||[]).some(n=>n.texto)?'<h4>Observações da NF (Teams)</h4><div class="fin">'+p.nf.filter(n=>n.texto).map(n=>esc(n.texto)).join('<br>')+'</div>':'';
   dlg.showModal();
 }
 $('dl').onclick=()=>{

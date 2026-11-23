@@ -59,13 +59,13 @@ def decrypt(box, senha):
     key = PBKDF2HMAC(hashes.SHA256(), 32, base64.b64decode(box["salt"]), 200000).derive(senha.encode())
     return json.loads(AESGCM(key).decrypt(base64.b64decode(box["iv"]), base64.b64decode(box["ct"]), None))
 
-def build(items_by_month, sheet=None, old_det=None):
-    sheet, old_det = sheet or {}, old_det or {}
+def build(items_by_month, sheet=None, old_det=None, nfmap=None):
+    sheet, old_det, nfmap = sheet or {}, old_det or {}, nfmap or {}
     meses = []
     for m, items in items_by_month:
         rows = [{"pedido": i["pedido"], "cliente": i["cliente"] or "", "valor": num(i["valor"]),
                  "entrega": i["entrega"] or "(sem status)", "empresa": i["empresa"] or "(sem empresa)",
-                 "comercial": i["comercial"] or "(sem comercial)", "situacao": classify(i),
+                 "comercial": i["comercial"] or "(sem comercial)", "situacao": classify(i), "nf": nfmap.get(i["pedido"].strip(), []),
                  **dict(zip(("detalhe", "financeiro"), sheet.get(i["pedido"]) or old_det.get(i["pedido"]) or ([], "")))} for i in items]
         meses.append({**m, "pedidos": rows})
     return {"atualizado_em": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"), "meses": meses}
@@ -87,7 +87,9 @@ if __name__ == "__main__":
     sheet = {}
     if os.environ.get("SHEET_CSV_URL"):
         sheet = load_sheet(urllib.request.urlopen(os.environ["SHEET_CSV_URL"], timeout=60).read().decode("utf-8"))
-    out = build([(b, fetch_items(tok, b["id"])) for b in BOARDS], sheet, old_det)
+    try: nfmap = decrypt(json.load(open("nf.json", encoding="utf-8")), senha)["nf"]
+    except Exception: nfmap = {}
+    out = build([(b, fetch_items(tok, b["id"])) for b in BOARDS], sheet, old_det, nfmap)
     h = hashlib.sha256((json.dumps(out["meses"], sort_keys=True) + senha).encode()).hexdigest()
     age = (datetime.datetime.now(datetime.timezone.utc) - datetime.datetime.fromisoformat(old["t"])).total_seconds() if old.get("t") else 1e9
     if old.get("h") == h and age < 3600:
