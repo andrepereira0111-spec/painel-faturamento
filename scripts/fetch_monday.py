@@ -1,5 +1,8 @@
 """Busca os boards do Monday e gera data.json (rodado pelo GitHub Actions)."""
-import json, os, sys, urllib.request, datetime
+import json, os, sys, urllib.request, datetime, base64, hashlib
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
 
 BOARDS = [{"id": 18438251081, "mes": "2026-11", "nome": "NOVEMBRO"}]  # adicione outros meses aqui
 COL = dict(cliente="cliente_mkm7jajr", valor="numeric_mm761qra", fat="dropdown_mm76r38a",
@@ -49,8 +52,21 @@ def build(items_by_month):
         meses.append({**m, "pedidos": rows})
     return {"atualizado_em": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"), "meses": meses}
 
+def encrypt(obj, senha, h):
+    salt, iv = os.urandom(16), os.urandom(12)
+    key = PBKDF2HMAC(hashes.SHA256(), 32, salt, 200000).derive(senha.encode())
+    ct = AESGCM(key).encrypt(iv, json.dumps(obj, ensure_ascii=False).encode(), None)
+    b = lambda x: base64.b64encode(x).decode()
+    return {"v": 1, "h": h, "t": obj["atualizado_em"], "salt": b(salt), "iv": b(iv), "ct": b(ct)}
+
 if __name__ == "__main__":
-    tok = os.environ["MONDAY_TOKEN"]
+    tok, senha = os.environ["MONDAY_TOKEN"], os.environ["PAINEL_SENHA"]
     out = build([(b, fetch_items(tok, b["id"])) for b in BOARDS])
-    json.dump(out, open("data.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    h = hashlib.sha256(json.dumps(out["meses"], sort_keys=True).encode()).hexdigest()
+    try: old = json.load(open("data.json", encoding="utf-8"))
+    except Exception: old = {}
+    age = (datetime.datetime.now(datetime.timezone.utc) - datetime.datetime.fromisoformat(old["t"])).total_seconds() if old.get("t") else 1e9
+    if old.get("h") == h and age < 3600:
+        print("sem mudancas"); sys.exit(0)
+    json.dump(encrypt(out, senha, h), open("data.json", "w"))
     print("ok", sum(len(m["pedidos"]) for m in out["meses"]), "pedidos")

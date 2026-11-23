@@ -40,7 +40,11 @@ tfoot td{font-weight:600}
   <select id="mes" aria-label="Mês"></select>
 </header>
 
-<nav class="tabs" id="tabs"></nav>
+<div id="lock" class="card hide" style="max-width:360px;margin:40px auto">
+  <b>Acesso restrito</b><p class="mut" style="margin:6px 0 12px">Digite a senha do painel.</p>
+  <form id="lf"><input id="pw" type="password" autocomplete="current-password" style="width:100%;margin-bottom:8px" placeholder="Senha">
+  <button style="width:100%">Entrar</button></form><p id="le" class="mut" style="color:var(--bad)"></p></div>
+<div id="app"><nav class="tabs" id="tabs"></nav>
 
 <div class="bar-top">
   <span class="mut" id="sub"></span>
@@ -55,6 +59,7 @@ tfoot td{font-weight:600}
   <b>Faturado</b> = FATURADO (S/N) = SIM · <b>A faturar</b> = ainda não faturado e já ENTREGUE · <b>Próximo mês</b> = não faturado e ainda não entregue (em expedição, transferência ou aguardando) · Pedidos CANCELADOS ficam fora dos totais. Atualiza sozinho a cada ~5 min.</p>
 </section>
 <section id="v-tab" class="card scroll hide"><table id="t"></table></section>
+</div>
 </main>
 <script>
 const C={faturado:'var(--ok)',a_faturar:'var(--warn)',proximo_mes:'var(--next)',outros:'#8a93a5'};
@@ -131,17 +136,31 @@ $('dl').onclick=()=>{
   a.download=`faturamento-${tab}-${cur}.csv`;a.click();URL.revokeObjectURL(a.href);
 };
 
-async function load(){
+const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function decrypt(box,pw){
+  const km=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);
+  const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(box.salt),iterations:200000,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['decrypt']);
+  return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(box.iv)},key,b64(box.ct))));
+}
+async function load(pw){
+  pw=pw||localStorage.pw;
   try{
-    D=await (await fetch('data.json?t='+Date.now())).json();
+    const box=await (await fetch('data.json?t='+Date.now())).json();
+    if(!box.ct){D=box}else{
+      if(!pw){$('lock').classList.remove('hide');$('app').classList.add('hide');return}
+      try{D=await decrypt(box,pw);localStorage.pw=pw}catch(e){localStorage.removeItem('pw');$('lock').classList.remove('hide');$('app').classList.add('hide');$('le').textContent=pw===localStorage.pw||arguments[0]?'Senha incorreta.':'';return}
+    }
+    $('lock').classList.add('hide');$('app').classList.remove('hide');
+    if(!D.meses.length){$('upd').textContent='aguardando primeira atualização';return}
     $('mes').innerHTML=D.meses.map(m=>`<option value="${m.mes}">${m.nome} ${m.mes.slice(0,4)}</option>`).join('');
     $('mes').value=cur||D.meses[D.meses.length-1].mes;cur=$('mes').value;render();
     const min=(Date.now()-new Date(D.atualizado_em))/60000;
     $('upd').textContent='atualizado '+new Date(D.atualizado_em).toLocaleString('pt-BR');
-    $('dot').className='live'+(min>30?' old':'');
+    $('dot').className='live'+(min>120?' old':'');
   }catch(e){$('upd').textContent='erro ao carregar dados'}
 }
-load();setInterval(load,60000);
+$('lf').onsubmit=e=>{e.preventDefault();$('le').textContent='';load($('pw').value)};
+load();setInterval(()=>load(),60000);
 </script>
 </body>
 </html>
