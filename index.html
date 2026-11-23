@@ -124,9 +124,10 @@ function render(){
     $('tot').textContent='— total '+R(T);
     $('bar').innerHTML=Object.keys(S).map(k=>`<div style="width:${S[k]/T*100}%;background:${C[k]}" title="${N[k]}: ${R(S[k])}"></div>`).join('');
     $('legend').innerHTML=Object.keys(S).filter(k=>S[k]).map(k=>`<span style="margin-right:14px"><i class="tag" style="background:${C[k]};padding:0 6px">&nbsp;</i> ${N[k]} ${R(S[k])}</span>`).join('');
-    const sv=P.filter(p=>p.valor===0),fp=P.filter(p=>p.situacao==='faturado'&&p.entrega.toUpperCase()!=='ENTREGUE'),nm=m.pedidos.filter(p=>!(p.detalhe||[]).length&&p.situacao!=='cancelado');
+    const ns=P.filter(p=>p.situacao==='faturado'&&!(p.nf||[]).length),nn=P.filter(p=>(p.situacao==='a_faturar'||p.situacao==='proximo_mes')&&(p.nf||[]).length),sv=P.filter(p=>p.valor===0),fp=P.filter(p=>p.situacao==='faturado'&&p.entrega.toUpperCase()!=='ENTREGUE'),nm=m.pedidos.filter(p=>!(p.detalhe||[]).length&&p.situacao!=='cancelado');
     const card=(f,n,t,sub)=>`<a class="card" href="#ped" data-f="${f}"><b>${n}</b> <span>${t}</span><br><span class="mut">${sub}</span></a>`;
-    $('att').innerHTML=card('semvalor',sv.length,'pedidos sem valor lançado','Entram como R$ 0 nos totais; o faturado real pode ser maior.')+
+    $('att').innerHTML=card('nfnao',nn.length,'com NF (PDF) mas marcados NÃO faturados',R(nn.reduce((a,p)=>a+p.valor,0))+' provavelmente já faturados: falta marcar SIM.')+card('nfsem',ns.length,'marcados faturados sem NF (PDF)',R(ns.reduce((a,p)=>a+p.valor,0))+' sem comprovação no Monday.')+
+      card('semvalor',sv.length,'pedidos sem valor lançado','Entram como R$ 0 nos totais; o faturado real pode ser maior.')+
       card('fatpend',fp.length,'faturados e ainda não entregues',R(fp.reduce((a,p)=>a+p.valor,0))+' marcados SIM antes da entrega.')+
       `<div class="card" style="border-left:4px solid var(--warn)"><b>${nm.length}</b> <span>sem lançamento na planilha</span><br><span class="mut">Sem detalhe/financeiro (ex.: retiradas).</span></div>`;
     view={head:['Situação','Pedidos','Valor'],rows:[],csv:Object.keys(S).map(k=>[N[k],cnt(k),S[k]])};
@@ -145,13 +146,13 @@ function render(){
       g.map(([k,v])=>[k,v.n,v.faturado,v.a_faturar,v.proximo_mes,tot(v)]),
       ['Total',P.length,R(S.faturado),R(S.a_faturar),R(S.proximo_mes),R(T)]);
   }else if(tab==='ped'){
-    const fs=$('fs');if(!fs.options.length){fs.innerHTML='<option value="">Todas as situações</option>'+Object.keys(N).map(k=>`<option value="${k}">${N[k]}</option>`).join('')+'<option value="cancelado">Cancelado</option><option value="semvalor">⚠ Sem valor lançado</option><option value="fatpend">⚠ Faturado e ainda não entregue</option>'}
+    const fs=$('fs');if(!fs.options.length){fs.innerHTML='<option value="">Todas as situações</option>'+Object.keys(N).map(k=>`<option value="${k}">${N[k]}</option>`).join('')+'<option value="cancelado">Cancelado</option><option value="semvalor">⚠ Sem valor lançado</option><option value="nfsem">⚠ Marcado faturado, sem NF (PDF)</option><option value="nfnao">⚠ Tem NF (PDF), marcado NÃO faturado</option><option value="fatpend">⚠ Faturado e ainda não entregue</option>'}
     const q=$('q').value.toLowerCase(),f=fs.value;
-    const L=m.pedidos.filter(p=>(!f||p.situacao===f||(f==='semvalor'&&p.valor===0&&p.situacao!=='cancelado')||(f==='fatpend'&&p.situacao==='faturado'&&p.entrega.toUpperCase()!=='ENTREGUE'))&&(!f&&p.situacao==='cancelado'?false:true)&&(!q||(p.pedido+p.cliente).toLowerCase().includes(q))).sort((a,b)=>b.valor-a.valor);
+    const L=m.pedidos.filter(p=>(!f||p.situacao===f||(f==='semvalor'&&p.valor===0&&p.situacao!=='cancelado')||(f==='nfsem'&&p.situacao==='faturado'&&!(p.nf||[]).length)||(f==='nfnao'&&(p.situacao==='a_faturar'||p.situacao==='proximo_mes')&&(p.nf||[]).length)||(f==='fatpend'&&p.situacao==='faturado'&&p.entrega.toUpperCase()!=='ENTREGUE'))&&(!f&&p.situacao==='cancelado'?false:true)&&(!q||(p.pedido+p.cliente).toLowerCase().includes(q))).sort((a,b)=>b.valor-a.valor);
     const NN={...N,cancelado:'Cancelado'};
-    setTable([{t:'Pedido',l:1},{t:'Cliente',l:1},{t:'Empresa',l:1},{t:'Comercial',l:1},{t:'Entrega',l:1},{t:'Situação',l:1},'Valor'],
-      L.map(p=>[esc(p.pedido),esc(p.cliente),esc(p.empresa),esc(p.comercial),esc(p.entrega),`<span class="tag" style="background:${C[p.situacao]||'var(--bad)'}">${NN[p.situacao]}</span>`,R(p.valor)]),
-      L.map(p=>[p.pedido,p.cliente,p.empresa,p.comercial,p.entrega,NN[p.situacao],p.valor]),null,L);
+    setTable([{t:'Pedido',l:1},{t:'Cliente',l:1},{t:'Empresa',l:1},{t:'Comercial',l:1},{t:'Entrega',l:1},{t:'Situação',l:1},{t:'NF',l:1},'Valor'],
+      L.map(p=>[esc(p.pedido),esc(p.cliente),esc(p.empresa),esc(p.comercial),esc(p.entrega),`<span class="tag" style="background:${C[p.situacao]||'var(--bad)'}">${NN[p.situacao]}</span>`,(p.nf||[]).length?'<span class="tag" style="background:var(--blue)">PDF</span>':'<span class="mut">—</span>',R(p.valor)]),
+      L.map(p=>[p.pedido,p.cliente,p.empresa,p.comercial,p.entrega,NN[p.situacao],(p.nf||[]).length?'Sim':'Não',p.valor]),null,L);
   }
 }
 
@@ -162,6 +163,7 @@ function openPed(p){
   const NN={...N,cancelado:'Cancelado'},det=p.detalhe||[];
   $('mt').textContent=p.pedido+' — '+p.cliente;
   $('mk').innerHTML=`<span class="tag" style="background:${C[p.situacao]||'var(--bad)'}">${NN[p.situacao]}</span><span>Valor no Monday: <b>${p.valor?R(p.valor):'não informado'}</b></span><span class="mut">Entrega: ${esc(p.entrega)} · ${esc(p.empresa)} · ${esc(p.comercial)}</span>`;
+  $('mk').innerHTML+=(p.nf||[]).length?(p.nf).map(f=>`<a href="${esc(f.u)}" target="_blank" rel="noopener">📄 NF: ${esc(f.n)}</a>`).join(' '):'<span class="mut">Sem NF (PDF) anexada no Monday</span>';
   $('mi').innerHTML=det.length?'<div class="kv">'+det.map(([k,v])=>`<div><span>${esc(k)}</span><b>${esc(v).replace(/\n/g,'<br>')}</b></div>`).join('')+'</div>':'<p class="mut">Pedido não encontrado na planilha de lançamentos.</p>';
   $('mf').innerHTML=p.financeiro?esc(p.financeiro).replace(/\n/g,'<br>').replace(/(R\$\s?[\d.,]+)/g,'<mark>$1</mark>'):'<span class="mut">Sem observação do financeiro.</span>';
   dlg.showModal();
