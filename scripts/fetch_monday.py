@@ -62,7 +62,7 @@ def encrypt(obj, senha, h):
 if __name__ == "__main__":
     tok, senha = os.environ["MONDAY_TOKEN"], os.environ["PAINEL_SENHA"]
     out = build([(b, fetch_items(tok, b["id"])) for b in BOARDS])
-    h = hashlib.sha256(json.dumps(out["meses"], sort_keys=True).encode()).hexdigest()
+    h = hashlib.sha256((json.dumps(out["meses"], sort_keys=True) + senha).encode()).hexdigest()
     try: old = json.load(open("data.json", encoding="utf-8"))
     except Exception: old = {}
     age = (datetime.datetime.now(datetime.timezone.utc) - datetime.datetime.fromisoformat(old["t"])).total_seconds() if old.get("t") else 1e9
