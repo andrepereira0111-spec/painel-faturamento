@@ -1,0 +1,56 @@
+"""Busca os boards do Monday e gera data.json (rodado pelo GitHub Actions)."""
+import json, os, sys, urllib.request, datetime
+
+BOARDS = [{"id": 18438251081, "mes": "2026-11", "nome": "NOVEMBRO"}]  # adicione outros meses aqui
+COL = dict(cliente="cliente_mkm7jajr", valor="numeric_mm761qra", fat="dropdown_mm76r38a",
+           entrega="status_1_mkm4ymtz", empresa="color_mm8tmszb", comercial="multi_selectbj3iv6f7",
+           negocio="status_1_mkm71z9h", data="date")
+
+def gql(token, q, v=None):
+    r = urllib.request.Request("https://api.monday.com/v2", method="POST",
+        data=json.dumps({"query": q, "variables": v or {}}).encode(),
+        headers={"Authorization": token, "Content-Type": "application/json", "API-Version": "2024-10"})
+    d = json.load(urllib.request.urlopen(r, timeout=60))
+    if "errors" in d: raise SystemExit(d["errors"])
+    return d["data"]
+
+Q1 = """query($id:[ID!],$ids:[String!]){boards(ids:$id){items_page(limit:500){cursor items{id name column_values(ids:$ids){id text}}}}}"""
+Q2 = """query($c:String!,$ids:[String!]){next_items_page(limit:500,cursor:$c){cursor items{id name column_values(ids:$ids){id text}}}}"""
+
+def fetch_items(token, board):
+    ids = list(COL.values())
+    d = gql(token, Q1, {"id": [board], "ids": ids})["boards"][0]["items_page"]
+    items, cur = d["items"], d["cursor"]
+    while cur:
+        d = gql(token, Q2, {"c": cur, "ids": ids})["next_items_page"]
+        items += d["items"]; cur = d["cursor"]
+    return [{"pedido": i["name"], **{k: next((c["text"] for c in i["column_values"] if c["id"] == v), None)
+            for k, v in COL.items()}} for i in items]
+
+def num(x):
+    try: return float(str(x).replace(",", ".")) if x else 0.0
+    except ValueError: return 0.0
+
+def classify(i):
+    """faturado | a_faturar (entregue, ainda sem NF) | proximo_mes (ainda nao expedido/entregue) | cancelado | outros"""
+    ent = (i["entrega"] or "").upper()
+    if ent == "CANCELADO": return "cancelado"
+    f = (i["fat"] or "").upper()
+    if f == "SIM": return "faturado"
+    if f == "OUTROS": return "outros"
+    return "a_faturar" if ent == "ENTREGUE" else "proximo_mes"
+
+def build(items_by_month):
+    meses = []
+    for m, items in items_by_month:
+        rows = [{"pedido": i["pedido"], "cliente": i["cliente"] or "", "valor": num(i["valor"]),
+                 "entrega": i["entrega"] or "(sem status)", "empresa": i["empresa"] or "(sem empresa)",
+                 "comercial": i["comercial"] or "(sem comercial)", "situacao": classify(i)} for i in items]
+        meses.append({**m, "pedidos": rows})
+    return {"atualizado_em": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"), "meses": meses}
+
+if __name__ == "__main__":
+    tok = os.environ["MONDAY_TOKEN"]
+    out = build([(b, fetch_items(tok, b["id"])) for b in BOARDS])
+    json.dump(out, open("data.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    print("ok", sum(len(m["pedidos"]) for m in out["meses"]), "pedidos")

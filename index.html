@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Painel de Faturamento</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--tx:#1d2330;--mut:#6b7385;--bd:#e3e6ec;--ok:#1f9d63;--warn:#e8a317;--next:#3b6fd4;--bad:#c4455a;--acc:#1d2330}
+@media(prefers-color-scheme:dark){:root{--bg:#12151c;--card:#1b2029;--tx:#e8eaf0;--mut:#98a0b3;--bd:#2a3140;--acc:#e8eaf0}}
+*{box-sizing:border-box}body{margin:0;font:15px/1.4 system-ui,Segoe UI,sans-serif;background:var(--bg);color:var(--tx)}
+main{max-width:1100px;margin:0 auto;padding:24px 16px 48px}
+header{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+h1{margin:0;font-size:22px}small,.mut{color:var(--mut)}
+.live{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:6px}.live.old{background:var(--bad)}
+select,input,button{font:inherit;padding:6px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--tx)}
+button{cursor:pointer}button:hover{border-color:var(--mut)}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--bd);margin-bottom:16px;overflow-x:auto}
+.tabs button{border:0;border-bottom:3px solid transparent;border-radius:0;background:none;padding:10px 14px;color:var(--mut);white-space:nowrap}
+.tabs button.on{color:var(--tx);border-color:var(--acc);font-weight:600}
+.bar-top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px}
+.kpi b{display:block;font-size:26px;margin:4px 0;font-variant-numeric:tabular-nums}
+.kpi .l{font-size:13px;color:var(--mut)}.kpi i{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:6px}
+.bar{display:flex;height:22px;border-radius:6px;overflow:hidden;margin:12px 0 6px;background:var(--bd)}.bar div{height:100%}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{padding:7px 8px;text-align:right;border-bottom:1px solid var(--bd);font-size:14px}
+th:first-child,td:first-child{text-align:left}th{color:var(--mut);font-weight:600;font-size:12px;position:sticky;top:0;background:var(--card)}
+td.l,th.l{text-align:left}
+.tag{padding:2px 8px;border-radius:99px;font-size:12px;color:#fff;white-space:nowrap}
+.scroll{overflow-x:auto}.hide{display:none}
+tfoot td{font-weight:600}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div><h1>Painel de Faturamento</h1>
+  <small><span id="dot" class="live"></span><span id="upd">carregando…</span></small></div>
+  <select id="mes" aria-label="Mês"></select>
+</header>
+
+<nav class="tabs" id="tabs"></nav>
+
+<div class="bar-top">
+  <span class="mut" id="sub"></span>
+  <span><input id="q" class="hide" placeholder="Buscar pedido ou cliente…"> <select id="fs" class="hide"></select> <button id="dl">⬇ Baixar CSV</button></span>
+</div>
+
+<section id="v-resumo">
+  <div class="kpis" id="kpis"></div>
+  <div class="card" style="margin-top:12px"><b>Composição do mês</b> <span class="mut" id="tot"></span>
+    <div class="bar" id="bar"></div><div id="legend" class="mut" style="font-size:13px"></div></div>
+  <p class="mut" style="font-size:12px;margin-top:18px">
+  <b>Faturado</b> = FATURADO (S/N) = SIM · <b>A faturar</b> = ainda não faturado e já ENTREGUE · <b>Próximo mês</b> = não faturado e ainda não entregue (em expedição, transferência ou aguardando) · Pedidos CANCELADOS ficam fora dos totais. Atualiza sozinho a cada ~5 min.</p>
+</section>
+<section id="v-tab" class="card scroll hide"><table id="t"></table></section>
+</main>
+<script>
+const C={faturado:'var(--ok)',a_faturar:'var(--warn)',proximo_mes:'var(--next)',outros:'#8a93a5'};
+const N={faturado:'Já faturado',a_faturar:'A faturar (entregue)',proximo_mes:'Pendente p/ próximo mês',outros:'Outros'};
+const TABS=[['resumo','Resumo'],['exp','Expedição'],['emp','Empresas'],['com','Comercial'],['ped','Pedidos']];
+const R=v=>v.toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0});
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let D,cur=localStorage.mes,tab=location.hash.slice(1)||'resumo',view={head:[],rows:[],csv:[]};
+
+$('tabs').innerHTML=TABS.map(([k,n])=>`<button data-k="${k}">${n}</button>`).join('');
+$('tabs').onclick=e=>{const k=e.target.dataset.k;if(k){tab=k;location.hash=k;render()}};
+$('mes').onchange=e=>{cur=localStorage.mes=e.target.value;render()};
+$('q').oninput=render;$('fs').onchange=render;
+
+function group(rows,key){const m={};rows.forEach(p=>{const k=p[key];m[k]??={faturado:0,a_faturar:0,proximo_mes:0,outros:0,n:0};m[k][p.situacao]+=p.valor;m[k].n++});return Object.entries(m)}
+const tot=v=>v.faturado+v.a_faturar+v.proximo_mes+v.outros;
+
+function setTable(head,rows,csv,foot){
+  view={head,rows,csv};
+  $('t').innerHTML='<thead><tr>'+head.map((h,i)=>`<th class="${h.l?'l':''}">${h.t||h}</th>`).join('')+'</tr></thead><tbody>'+
+    rows.map(r=>'<tr>'+r.map((c,i)=>`<td class="${head[i].l?'l':''}">${c}</td>`).join('')+'</tr>').join('')+'</tbody>'+(foot?'<tfoot><tr>'+foot.map((c,i)=>`<td class="${head[i].l?'l':''}">${c}</td>`).join('')+'</tr></tfoot>':'');
+}
+
+function render(){
+  const m=D.meses.find(x=>x.mes===cur)||D.meses[D.meses.length-1];cur=m.mes;
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.k===tab));
+  const P=m.pedidos.filter(p=>p.situacao!=='cancelado');
+  const pend=P.filter(p=>p.situacao==='a_faturar'||p.situacao==='proximo_mes');
+  $('v-resumo').classList.toggle('hide',tab!=='resumo');$('v-tab').classList.toggle('hide',tab==='resumo');
+  $('q').classList.toggle('hide',tab!=='ped');$('fs').classList.toggle('hide',tab!=='ped');
+
+  const S={faturado:0,a_faturar:0,proximo_mes:0,outros:0};P.forEach(p=>S[p.situacao]+=p.valor);
+  const T=Object.values(S).reduce((a,b)=>a+b,0)||1;
+  const cnt=k=>P.filter(p=>p.situacao===k).length;
+  $('sub').textContent=m.nome+' '+m.mes.slice(0,4)+' · '+P.length+' pedidos (sem cancelados)';
+
+  if(tab==='resumo'){
+    $('kpis').innerHTML=['faturado','a_faturar','proximo_mes'].map(k=>`<div class="card kpi"><span class="l"><i style="background:${C[k]}"></i>${N[k]}</span><b>${R(S[k])}</b><span class="mut">${cnt(k)} pedidos · ${(S[k]/T*100).toFixed(0)}%</span></div>`).join('');
+    $('tot').textContent='— total '+R(T);
+    $('bar').innerHTML=Object.keys(S).map(k=>`<div style="width:${S[k]/T*100}%;background:${C[k]}" title="${N[k]}: ${R(S[k])}"></div>`).join('');
+    $('legend').innerHTML=Object.keys(S).filter(k=>S[k]).map(k=>`<span style="margin-right:14px"><i class="tag" style="background:${C[k]};padding:0 6px">&nbsp;</i> ${N[k]} ${R(S[k])}</span>`).join('');
+    view={head:['Situação','Pedidos','Valor'],rows:[],csv:Object.keys(S).map(k=>[N[k],cnt(k),S[k]])};
+    return;
+  }
+  if(tab==='exp'){
+    const g=group(pend,'entrega').sort((a,b)=>tot(b[1])-tot(a[1]));
+    setTable([{t:'Status de entrega',l:1},'Pedidos','A faturar (entregue)','Próx. mês'],
+      g.map(([k,v])=>[esc(k),v.n,R(v.a_faturar),R(v.proximo_mes)]),
+      g.map(([k,v])=>[k,v.n,v.a_faturar,v.proximo_mes]),
+      ['Total',pend.length,R(S.a_faturar),R(S.proximo_mes)]);
+  }else if(tab==='emp'||tab==='com'){
+    const key=tab==='emp'?'empresa':'comercial',g=group(P,key).sort((a,b)=>tot(b[1])-tot(a[1]));
+    setTable([{t:tab==='emp'?'Empresa':'Comercial',l:1},'Pedidos','Faturado','A faturar','Próx. mês','Total'],
+      g.map(([k,v])=>[esc(k),v.n,R(v.faturado),R(v.a_faturar),R(v.proximo_mes),R(tot(v))]),
+      g.map(([k,v])=>[k,v.n,v.faturado,v.a_faturar,v.proximo_mes,tot(v)]),
+      ['Total',P.length,R(S.faturado),R(S.a_faturar),R(S.proximo_mes),R(T)]);
+  }else if(tab==='ped'){
+    const fs=$('fs');if(!fs.options.length){fs.innerHTML='<option value="">Todas as situações</option>'+Object.keys(N).map(k=>`<option value="${k}">${N[k]}</option>`).join('')+'<option value="cancelado">Cancelado</option>'}
+    const q=$('q').value.toLowerCase(),f=fs.value;
+    const L=m.pedidos.filter(p=>(!f||p.situacao===f)&&(!f&&p.situacao==='cancelado'?false:true)&&(!q||(p.pedido+p.cliente).toLowerCase().includes(q))).sort((a,b)=>b.valor-a.valor);
+    const NN={...N,cancelado:'Cancelado'};
+    setTable([{t:'Pedido',l:1},{t:'Cliente',l:1},{t:'Empresa',l:1},{t:'Comercial',l:1},{t:'Entrega',l:1},{t:'Situação',l:1},'Valor'],
+      L.map(p=>[esc(p.pedido),esc(p.cliente),esc(p.empresa),esc(p.comercial),esc(p.entrega),`<span class="tag" style="background:${C[p.situacao]||'var(--bad)'}">${NN[p.situacao]}</span>`,R(p.valor)]),
+      L.map(p=>[p.pedido,p.cliente,p.empresa,p.comercial,p.entrega,NN[p.situacao],p.valor]));
+  }
+}
+
+$('dl').onclick=()=>{
+  const heads=view.head.map(h=>h.t||h);
+  const cell=c=>{c=typeof c==='number'?String(c).replace('.',','):String(c);return /[;"\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c};
+  const txt='﻿'+[heads,...view.csv].map(r=>r.map(cell).join(';')).join('\r\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:'text/csv;charset=utf-8'}));
+  a.download=`faturamento-${tab}-${cur}.csv`;a.click();URL.revokeObjectURL(a.href);
+};
+
+async function load(){
+  try{
+    D=await (await fetch('data.json?t='+Date.now())).json();
+    $('mes').innerHTML=D.meses.map(m=>`<option value="${m.mes}">${m.nome} ${m.mes.slice(0,4)}</option>`).join('');
+    $('mes').value=cur||D.meses[D.meses.length-1].mes;cur=$('mes').value;render();
+    const min=(Date.now()-new Date(D.atualizado_em))/60000;
+    $('upd').textContent='atualizado '+new Date(D.atualizado_em).toLocaleString('pt-BR');
+    $('dot').className='live'+(min>30?' old':'');
+  }catch(e){$('upd').textContent='erro ao carregar dados'}
+}
+load();setInterval(load,60000);
+</script>
+</body>
+</html>
