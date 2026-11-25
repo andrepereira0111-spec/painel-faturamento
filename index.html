@@ -27,6 +27,7 @@ table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 th,td{padding:7px 8px;text-align:right;border-bottom:1px solid var(--bd);font-size:14px}
 th:first-child,td:first-child{text-align:left}th{color:var(--blue);font-weight:600;font-size:12px;position:sticky;top:0;background:var(--card)}
 td.l,th.l{text-align:left}
+th[data-c]{cursor:pointer;user-select:none;white-space:nowrap}th[data-c]:hover{background:var(--bg)}th i{font-style:normal;margin-left:4px;opacity:.45}th[aria-sort] i{opacity:1}
 .tag{padding:2px 8px;border-radius:99px;font-size:12px;color:#fff;white-space:nowrap}
 .scroll{overflow-x:auto}.hide{display:none}
 tfoot td{font-weight:600}
@@ -101,9 +102,19 @@ const nfTxt=(p,plain)=>(p.nf||[]).map(n=>plain?(n.numero||n.arquivo):esc(n.numer
 function group(rows,key){const m={};rows.forEach(p=>{const k=p[key];m[k]??={faturado:0,a_faturar:0,proximo_mes:0,outros:0,n:0};m[k][p.situacao]+=p.valor;m[k].n++});return Object.entries(m)}
 const tot=v=>v.faturado+v.a_faturar+v.proximo_mes+v.outros;
 
+const ordem={}; // ordenação escolhida em cada aba: {c: coluna, d: 1 crescente, -1 decrescente}
 function setTable(head,rows,csv,foot,items){
+  const s=ordem[tab];
+  if(s){
+    const ix=rows.map((_,i)=>i).sort((a,b)=>{
+      const x=csv[a][s.c],y=csv[b][s.c];
+      if(x===''||y==='')return (x==='')-(y===''); // vazios sempre no fim
+      return s.d*(typeof x==='number'?x-y:String(x).localeCompare(String(y),'pt-BR',{numeric:true,sensitivity:'base'}));
+    });
+    rows=ix.map(i=>rows[i]);csv=ix.map(i=>csv[i]);items=items&&ix.map(i=>items[i]);
+  }
   view={head,rows,csv,items};
-  $('t').innerHTML='<thead><tr>'+head.map((h,i)=>`<th class="${h.l?'l':''}">${h.t||h}</th>`).join('')+'</tr></thead><tbody>'+
+  $('t').innerHTML='<thead><tr>'+head.map((h,i)=>{const on=s&&s.c===i;return `<th class="${h.l?'l':''}" data-c="${i}" tabindex="0" title="Clique para ordenar"${on?` aria-sort="${s.d>0?'ascending':'descending'}"`:''}>${h.t||h}<i>${on?(s.d>0?'▲':'▼'):'⇅'}</i></th>`}).join('')+'</tr></thead><tbody>'+
     rows.map((r,ri)=>'<tr'+(items?` data-i="${ri}"`:'')+'>'+r.map((c,i)=>`<td class="${head[i].l?'l':''}">${c}</td>`).join('')+'</tr>').join('')+'</tbody>'+(foot?'<tfoot><tr>'+foot.map((c,i)=>`<td class="${head[i].l?'l':''}">${c}</td>`).join('')+'</tr></tfoot>':'');
 }
 
@@ -159,7 +170,10 @@ function render(){
 
 const dlg=$('dlg');
 $('mx').onclick=()=>dlg.close();dlg.onclick=e=>{if(e.target===dlg)dlg.close()};
-$('t').onclick=e=>{const tr=e.target.closest('tr[data-i]');if(tr&&view.items)openPed(view.items[+tr.dataset.i])};
+// clique no título: crescente → decrescente → ordem original
+function ordenar(c){const s=ordem[tab];if(!s||s.c!==c)ordem[tab]={c,d:1};else if(s.d>0)s.d=-1;else delete ordem[tab];render();$('t').querySelector(`th[data-c="${c}"]`).focus({preventScroll:true})}
+$('t').onkeydown=e=>{const th=e.target.closest('th[data-c]');if(th&&(e.key==='Enter'||e.key===' ')){e.preventDefault();ordenar(+th.dataset.c)}};
+$('t').onclick=e=>{const th=e.target.closest('th[data-c]');if(th)return ordenar(+th.dataset.c);const tr=e.target.closest('tr[data-i]');if(tr&&view.items)openPed(view.items[+tr.dataset.i])};
 function openPed(p){
   const NN={...N,cancelado:'Cancelado'},det=p.detalhe||[];
   $('mt').textContent=p.pedido+' — '+p.cliente;
@@ -171,7 +185,7 @@ function openPed(p){
   dlg.showModal();
 }
 $('dl').onclick=()=>{
-  const heads=view.head.map(h=>h.t||h);
+  const heads=view.head.map(h=>h.t||h); // view.csv já vem na ordem escolhida
   const cell=c=>{c=typeof c==='number'?String(c).replace('.',','):String(c);return /[;"\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c};
   const txt='﻿'+[heads,...view.csv].map(r=>r.map(cell).join(';')).join('\r\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:'text/csv;charset=utf-8'}));
