@@ -35,7 +35,7 @@ tfoot td{font-weight:600}
 .att{margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
 .att a{display:block;text-decoration:none;color:inherit;border-left:4px solid var(--warn)}
 .att b{font-size:22px;font-family:Outfit,sans-serif}
-tbody tr[data-i]{cursor:pointer}tbody tr[data-i]:hover td{background:var(--bg)}
+tbody tr[data-i],tbody tr[data-e]{cursor:pointer}tbody tr[data-i]:hover td,tbody tr[data-e]:hover td{background:var(--bg)}
 dialog{border:0;border-radius:14px;padding:0;width:min(780px,94vw);max-height:90vh;background:var(--card);color:var(--tx);box-shadow:0 20px 60px #0006}
 dialog::backdrop{background:#1e3a5f99}
 .mh{background:var(--navy);color:#fff;padding:16px 20px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
@@ -103,8 +103,8 @@ let D,cur=localStorage.mes,tab=location.hash.slice(1)||'resumo',view={head:[],ro
 
 $('tabs').innerHTML=TABS.map(([k,n])=>`<button data-k="${k}">${n}</button>`).join('');
 $('att').onclick=e=>{const t=e.target.closest('a[data-t]');if(t){e.preventDefault();tab=t.dataset.t;location.hash=tab;render();return}const a=e.target.closest('a[data-f]');if(a){e.preventDefault();tab='ped';location.hash='ped';$('fs').innerHTML='';render();$('fs').value=a.dataset.f;render()}};
-$('tabs').onclick=e=>{const k=e.target.dataset.k;if(k){tab=k;location.hash=k;render()}};
-$('mes').onchange=e=>{cur=localStorage.mes=e.target.value;render()};
+$('tabs').onclick=e=>{const k=e.target.dataset.k;if(k){tab=k;expSel=null;location.hash=k;render()}};
+$('mes').onchange=e=>{expSel=null;cur=localStorage.mes=e.target.value;render()};
 $('q').oninput=render;$('fs').onchange=render;
 
 const nfTxt=(p,plain)=>(p.nf||[]).map(n=>plain?(n.numero||n.arquivo):esc(n.numero||'NF')).join(', ');
@@ -147,8 +147,10 @@ const NF_PROD={AS:'Assistência',ES:'Estoque',TE:'Teste',CR:'Carregador'};
 const grupoFora=p=>{const m=String(p.pedido).trim().match(/-(AS|ES|TE|CR)\d*$/i);return m?m[1].toUpperCase():''};
 
 const ordem={}; // ordenação escolhida em cada aba: {c: coluna, d: 1 crescente, -1 decrescente}
+let expSel=null; // aba Expedição: status aberto (null = resumo)
+const chave=()=>tab==='exp'&&expSel!==null?'expL':tab; // a ordenação do resumo e a da lista são separadas
 function setTable(head,rows,csv,foot,items){
-  const s=ordem[tab];
+  const s=ordem[chave()];
   if(s){
     const ix=rows.map((_,i)=>i).sort((a,b)=>{
       const x=csv[a][s.c],y=csv[b][s.c];
@@ -214,12 +216,23 @@ function render(){
     view={head:['Grupo','Pedido','Cliente','Entrega','NF','Valor','Financeiro'],rows:[],csv:[...g('Este mês - a faturar',af),...g('Este mês - faturado pela NF',fn),...g('Este mês - já faturado',fs),...g('Mês que vem',pm)]};
     return;
   }
-  if(tab==='exp'){
-    const g=group(pend,'entrega').sort((a,b)=>tot(b[1])-tot(a[1]));
-    setTable([{t:'Status de entrega',l:1},'Pedidos','A faturar (entregue)','Próx. mês'],
-      g.map(([k,v])=>[esc(k),v.n,R(v.a_faturar),R(v.proximo_mes)]),
-      g.map(([k,v])=>[k,v.n,v.a_faturar,v.proximo_mes]),
-      ['Total',pend.length,R(S.a_faturar),R(S.proximo_mes)]);
+  if(tab==='exp'&&expSel===null){
+    const g=group(P,'entrega').sort((a,b)=>b[1].n-a[1].n);
+    $('sub').textContent+=' · clique num status para ver os pedidos';
+    setTable([{t:'Status de entrega',l:1},'Pedidos','Já faturado','A faturar','Próx. mês','Total'],
+      g.map(([k,v])=>[esc(k)+' <span class="mut">›</span>',v.n,R(v.faturado),R(v.a_faturar),R(v.proximo_mes),R(tot(v))]),
+      g.map(([k,v])=>[k,v.n,v.faturado,v.a_faturar,v.proximo_mes,tot(v)]),
+      ['Total',P.length,R(S.faturado),R(S.a_faturar),R(S.proximo_mes),R(T)]);
+    $('t').querySelectorAll('tbody tr').forEach((tr,i)=>{tr.dataset.e=i;tr.tabIndex=0;tr.title='Clique para ver os pedidos'});
+  }else if(tab==='exp'){
+    const ORD={a_faturar:0,proximo_mes:1,outros:2,faturado:3};
+    const L=P.filter(p=>p.entrega===expSel).sort((a,b)=>ORD[a.situacao]-ORD[b.situacao]||b.valor-a.valor),soma=L.reduce((a,p)=>a+p.valor,0);
+    const partes=[['a_faturar','a faturar'],['proximo_mes','para o próximo mês'],['faturado','já faturados']].map(([k,t])=>[L.filter(p=>p.situacao===k).length,t]).filter(x=>x[0]).map(x=>x[0]+' '+(x[0]===1?x[1].replace('faturados','faturado'):x[1]));
+    $('sub').innerHTML=`<button id="volta">← Voltar</button> Expedição · <b>${esc(expSel)}</b> · ${L.length} pedidos${partes.length?' ('+partes.join(', ')+')':''}`;
+    setTable([{t:'Pedido',l:1},{t:'Cliente',l:1},{t:'Comercial',l:1},{t:'Situação',l:1},{t:'NF',l:1},'Valor'],
+      L.map(p=>[esc(p.pedido),esc(p.cliente)+finDiv(p),esc(p.comercial),`<span class="tag" style="background:${C[p.situacao]||'var(--bad)'}">${sitTxt(p)}</span>`,nfTxt(p)||'<span class="mut">—</span>',R(p.valor)]),
+      L.map(p=>[p.pedido,p.cliente,p.comercial,sitTxt(p),nfTxt(p,1),p.valor]),
+      ['Total ('+L.length+')','','','','',R(soma)],L);
   }else if(tab==='emp'||tab==='com'){
     const key=tab==='emp'?'empresa':'comercial',g=group(P,key);
     if(tab==='emp')EMPRESAS.filter(e=>!g.some(([k])=>k===e)).forEach(e=>g.push([e,{n:0,faturado:0,a_faturar:0,proximo_mes:0,outros:0}]));   // aparece mesmo zerada
@@ -258,9 +271,11 @@ const dlg=$('dlg');
 $('v-mes').onclick=e=>{const tr=e.target.closest('tr[data-m]');if(tr&&window._mes)openPed(window._mes[+tr.dataset.m])};
 $('mx').onclick=()=>dlg.close();dlg.onclick=e=>{if(e.target===dlg)dlg.close()};
 // clique no título: crescente → decrescente → ordem original
-function ordenar(c){const s=ordem[tab];if(!s||s.c!==c)ordem[tab]={c,d:1};else if(s.d>0)s.d=-1;else delete ordem[tab];render();$('t').querySelector(`th[data-c="${c}"]`).focus({preventScroll:true})}
-$('t').onkeydown=e=>{const th=e.target.closest('th[data-c]');if(th&&(e.key==='Enter'||e.key===' ')){e.preventDefault();ordenar(+th.dataset.c)}};
-$('t').onclick=e=>{const th=e.target.closest('th[data-c]');if(th)return ordenar(+th.dataset.c);const tr=e.target.closest('tr[data-i]');if(tr&&view.items)openPed(view.items[+tr.dataset.i])};
+function ordenar(c){const k=chave(),s=ordem[k];if(!s||s.c!==c)ordem[k]={c,d:1};else if(s.d>0)s.d=-1;else delete ordem[k];render();$('t').querySelector(`th[data-c="${c}"]`).focus({preventScroll:true})}
+const abreStatus=tr=>{expSel=view.csv[+tr.dataset.e][0];render()};
+$('sub').onclick=e=>{if(e.target.id==='volta'){expSel=null;render()}};
+$('t').onkeydown=e=>{const st=e.target.closest('tr[data-e]');if(st&&(e.key==='Enter'||e.key===' ')){e.preventDefault();return abreStatus(st)}const th=e.target.closest('th[data-c]');if(th&&(e.key==='Enter'||e.key===' ')){e.preventDefault();ordenar(+th.dataset.c)}};
+$('t').onclick=e=>{const th=e.target.closest('th[data-c]');if(th)return ordenar(+th.dataset.c);const st=e.target.closest('tr[data-e]');if(st)return abreStatus(st);const tr=e.target.closest('tr[data-i]');if(tr&&view.items)openPed(view.items[+tr.dataset.i])};
 function openPed(p){
   const NN={...N,cancelado:'Cancelado'},det=p.detalhe||[];
   $('mt').textContent=p.pedido+' — '+p.cliente;
