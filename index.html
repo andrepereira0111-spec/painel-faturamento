@@ -79,7 +79,7 @@ tr.grp td{background:var(--bg);color:var(--navy);font-weight:600;font-size:13px;
   <h4 style="margin:22px 0 0;font:700 13px Outfit,sans-serif;color:var(--blue);text-transform:uppercase">Conferir (pontos de atenção)</h4>
   <div class="att" id="att"></div>
   <p class="mut" style="font-size:12px;margin-top:18px">
-  <b>Faturado</b> = FATURADO (S/N) = SIM no Monday <b>ou</b> NF emitida no Teams · <b>A faturar</b> = sem SIM e sem NF, já ENTREGUE · <b>Próximo mês</b> = não faturado e ainda não entregue (em expedição, transferência ou aguardando) · Pedidos CANCELADOS ficam fora dos totais. Pedidos <b>RT</b> (nº terminando em -RT1, -RT2…) ficam separados, só na aba RT. Atualiza sozinho a cada ~5 min.</p>
+  <b>Faturado</b> = FATURADO (S/N) = SIM no Monday <b>ou</b> NF emitida no Teams · <b>A faturar</b> = sem SIM e sem NF, já ENTREGUE · <b>Próximo mês</b> = não faturado e ainda não entregue (em expedição, transferência ou aguardando) · Pedidos CANCELADOS ficam fora dos totais. Pedidos <b>RT</b> (nº terminando em -RT1, -RT2…) ficam separados, só na aba RT. Pedidos <b>AS, ES, TE e CR</b> (assistência, estoque, teste e carregador) não são faturados pela produção: ficam fora de todos os totais, na aba própria. Atualiza sozinho a cada ~5 min.</p>
 </section>
 <section id="v-mes" class="hide"><div class="kpis" id="kmes"></div>
   <div class="duo"><div class="card scroll"><h2>Fatura este mês<span id="h1"></span></h2><table id="t1"></table></div>
@@ -93,14 +93,14 @@ tr.grp td{background:var(--bg);color:var(--navy);font-weight:600;font-size:13px;
 <script>
 const C={faturado:'var(--ok)',a_faturar:'var(--warn)',proximo_mes:'var(--next)',outros:'#8a93a5'};
 const N={faturado:'Já faturado',a_faturar:'A faturar (entregue)',proximo_mes:'Pendente p/ próximo mês',outros:'Outros'};
-const TABS=[['resumo','Resumo'],['exp','Expedição'],['emp','Empresas'],['com','Comercial'],['mes','Este mês × Próximo'],['ped','Pedidos'],['rt','RT']];
+const TABS=[['resumo','Resumo'],['exp','Expedição'],['emp','Empresas'],['com','Comercial'],['mes','Este mês × Próximo'],['ped','Pedidos'],['rt','RT'],['fora','AS · ES · TE · CR']];
 const R=v=>v.toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0});
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let D,cur=localStorage.mes,tab=location.hash.slice(1)||'resumo',view={head:[],rows:[],csv:[]};
 
 $('tabs').innerHTML=TABS.map(([k,n])=>`<button data-k="${k}">${n}</button>`).join('');
-$('att').onclick=e=>{const a=e.target.closest('a[data-f]');if(a){e.preventDefault();tab='ped';location.hash='ped';$('fs').innerHTML='';render();$('fs').value=a.dataset.f;render()}};
+$('att').onclick=e=>{const t=e.target.closest('a[data-t]');if(t){e.preventDefault();tab=t.dataset.t;location.hash=tab;render();return}const a=e.target.closest('a[data-f]');if(a){e.preventDefault();tab='ped';location.hash='ped';$('fs').innerHTML='';render();$('fs').value=a.dataset.f;render()}};
 $('tabs').onclick=e=>{const k=e.target.dataset.k;if(k){tab=k;location.hash=k;render()}};
 $('mes').onchange=e=>{cur=localStorage.mes=e.target.value;render()};
 $('q').oninput=render;$('fs').onchange=render;
@@ -112,6 +112,9 @@ const tot=v=>v.faturado+v.a_faturar+v.proximo_mes+v.outros;
 function aplicaNF(D){D.meses.forEach(m=>m.pedidos.forEach(p=>{if((p.nf||[]).length&&(p.situacao==='a_faturar'||p.situacao==='proximo_mes')){p.sitMonday=p.situacao;p.situacao='faturado';p.pelaNF=true}}))}
 const sitTxt=(p,NN)=>(NN||N)[p.situacao]+(p.pelaNF?' (pela NF)':'');
 const isRT=p=>/-RT\d*$/i.test(String(p.pedido).trim()); // pedidos RT (nº terminando em -RT1, -RT2…) ficam só na aba RT
+// AS, ES, TE e CR (assistência, estoque, teste e carregador) não são faturados pela produção: aba própria, fora de todos os totais
+const NF_PROD={AS:'Assistência',ES:'Estoque',TE:'Teste',CR:'Carregador'};
+const grupoFora=p=>{const m=String(p.pedido).trim().match(/-(AS|ES|TE|CR)\d*$/i);return m?m[1].toUpperCase():''};
 
 const ordem={}; // ordenação escolhida em cada aba: {c: coluna, d: 1 crescente, -1 decrescente}
 function setTable(head,rows,csv,foot,items){
@@ -132,16 +135,17 @@ function setTable(head,rows,csv,foot,items){
 function render(){
   const m=D.meses.find(x=>x.mes===cur)||D.meses[D.meses.length-1];cur=m.mes;
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.k===tab));
-  const TODOS=m.pedidos.filter(p=>!isRT(p)),RT=m.pedidos.filter(p=>isRT(p)&&p.situacao!=='cancelado');
+  const TODOS=m.pedidos.filter(p=>!isRT(p)&&!grupoFora(p)),RT=m.pedidos.filter(p=>isRT(p)&&p.situacao!=='cancelado');
+  const FORA=m.pedidos.filter(p=>grupoFora(p)&&p.situacao!=='cancelado');
   const P=TODOS.filter(p=>p.situacao!=='cancelado');
   const pend=P.filter(p=>p.situacao==='a_faturar'||p.situacao==='proximo_mes');
   $('v-resumo').classList.toggle('hide',tab!=='resumo');$('v-mes').classList.toggle('hide',tab!=='mes');$('v-tab').classList.toggle('hide',tab==='resumo'||tab==='mes');
-  $('q').classList.toggle('hide',tab!=='ped'&&tab!=='rt');$('fs').classList.toggle('hide',tab!=='ped');
+  $('q').classList.toggle('hide',tab!=='ped'&&tab!=='rt'&&tab!=='fora');$('fs').classList.toggle('hide',tab!=='ped');
 
   const S={faturado:0,a_faturar:0,proximo_mes:0,outros:0};P.forEach(p=>S[p.situacao]+=p.valor);
   const T=Object.values(S).reduce((a,b)=>a+b,0)||1;
   const cnt=k=>P.filter(p=>p.situacao===k).length;
-  $('sub').textContent=m.nome+' '+m.mes.slice(0,4)+' · '+P.length+' pedidos (sem cancelados e sem RT)';
+  $('sub').textContent=m.nome+' '+m.mes.slice(0,4)+' · '+P.length+' pedidos (sem cancelados, RT, AS, ES, TE e CR)';
 
   if(tab==='resumo'){
     $('kpis').innerHTML=['faturado','a_faturar','proximo_mes'].map(k=>`<div class="card kpi"><span class="l"><i style="background:${C[k]}"></i>${N[k]}</span><b>${R(S[k])}</b><span class="mut">${cnt(k)} pedidos · ${(S[k]/T*100).toFixed(0)}%</span></div>`).join('');
@@ -154,6 +158,8 @@ function render(){
       card('semvalor',sv.length,'pedidos sem valor lançado','Entram como R$ 0 nos totais; o faturado real pode ser maior.')+
       card('fatpend',fp.length,'faturados e ainda não entregues',R(fp.reduce((a,p)=>a+p.valor,0))+' marcados SIM antes da entrega.')+
       `<div class="card" style="border-left:4px solid var(--warn)"><b>${nm.length}</b> <span>sem lançamento na planilha</span><br><span class="mut">Sem detalhe/financeiro (ex.: retiradas).</span></div>`;
+    const cv=FORA.filter(p=>p.valor);
+    if(cv.length)$('att').innerHTML+=`<a class="card" href="#fora" data-t="fora"><b>${cv.length}</b> <span>AS/ES/TE/CR com valor lançado</span><br><span class="mut">${R(cv.reduce((a,p)=>a+p.valor,0))} fora do faturamento: conferir se o número do pedido está certo.</span></a>`;
     view={head:['Situação','Pedidos','Valor'],rows:[],csv:Object.keys(S).map(k=>[N[k],cnt(k),S[k]])};
     return;
   }
@@ -203,6 +209,13 @@ function render(){
       L.map(p=>[esc(p.pedido),esc(p.cliente),esc(p.empresa),esc(p.comercial),esc(p.entrega),`<span class="tag" style="background:${C[p.situacao]||'var(--bad)'}">${sitTxt(p)}</span>`,nfTxt(p)||'<span class="mut">—</span>',R(p.valor)]),
       L.map(p=>[p.pedido,p.cliente,p.empresa,p.comercial,p.entrega,sitTxt(p),nfTxt(p,1),p.valor]),
       ['Total RT','','','','','','',R(L.reduce((a,p)=>a+p.valor,0))],L);
+  }else if(tab==='fora'){
+    const q=$('q').value.toLowerCase(),L=FORA.filter(p=>!q||(p.pedido+p.cliente).toLowerCase().includes(q)).sort((a,b)=>b.valor-a.valor||grupoFora(a).localeCompare(grupoFora(b))||a.pedido.localeCompare(b.pedido));
+    $('sub').textContent=m.nome+' '+m.mes.slice(0,4)+' · não faturados pela produção: '+FORA.length+' pedidos · '+Object.entries(NF_PROD).map(([k,n])=>n+' '+FORA.filter(p=>grupoFora(p)===k).length).join(' · ');
+    setTable([{t:'Pedido',l:1},{t:'Cliente',l:1},{t:'Grupo',l:1},{t:'Comercial',l:1},{t:'Entrega',l:1},{t:'NF',l:1},'Valor lançado'],
+      L.map(p=>[esc(p.pedido),esc(p.cliente),NF_PROD[grupoFora(p)],esc(p.comercial),esc(p.entrega),nfTxt(p)||'<span class="mut">—</span>',R(p.valor)]),
+      L.map(p=>[p.pedido,p.cliente,NF_PROD[grupoFora(p)],p.comercial,p.entrega,nfTxt(p,1),p.valor]),
+      ['Total ('+L.length+')','','','','','',R(L.reduce((a,p)=>a+p.valor,0))],L);
   }
 }
 
@@ -216,8 +229,9 @@ $('t').onclick=e=>{const th=e.target.closest('th[data-c]');if(th)return ordenar(
 function openPed(p){
   const NN={...N,cancelado:'Cancelado'},det=p.detalhe||[];
   $('mt').textContent=p.pedido+' — '+p.cliente;
-  $('mk').innerHTML=`<span class="tag" style="background:${C[p.situacao]||'var(--bad)'}">${sitTxt(p,NN)}</span><span>Valor no Monday: <b>${p.valor?R(p.valor):'não informado'}</b></span><span class="mut">Entrega: ${esc(p.entrega)} · ${esc(p.empresa)} · ${esc(p.comercial)}</span>`;
-  if(p.pelaNF)$('mk').innerHTML+=`<span class="mut">No Monday ainda não está SIM (conta como faturado pela NF)</span>`;
+  const fora=grupoFora(p)&&p.situacao!=='cancelado';
+  $('mk').innerHTML=`<span class="tag" style="background:${fora?C.outros:C[p.situacao]||'var(--bad)'}">${fora?NF_PROD[grupoFora(p)]+' · não faturado pela produção':sitTxt(p,NN)}</span><span>Valor no Monday: <b>${p.valor?R(p.valor):'não informado'}</b></span><span class="mut">Entrega: ${esc(p.entrega)} · ${esc(p.empresa)} · ${esc(p.comercial)}</span>`;
+  if(p.pelaNF&&!fora)$('mk').innerHTML+=`<span class="mut">No Monday ainda não está SIM (conta como faturado pela NF)</span>`;
   $('mk').innerHTML+=(p.nf||[]).length?(p.nf).map(n=>`<a href="${encodeURI(n.url)}" target="_blank" rel="noopener" title="${esc(n.texto||'')}">📄 NF ${esc(n.numero||'')} ${n.emissao?'· '+n.emissao.split('-').reverse().join('/'):''}</a>`).join(' '):'<span class="mut">Sem NF no Teams</span>';
   $('mi').innerHTML=det.length?'<div class="kv">'+det.map(([k,v])=>`<div><span>${esc(k)}</span><b>${esc(v).replace(/\n/g,'<br>')}</b></div>`).join('')+'</div>':'<p class="mut">Pedido não encontrado na planilha de lançamentos.</p>';
   $('mf').innerHTML=p.financeiro?esc(p.financeiro).replace(/\n/g,'<br>').replace(/(R\$\s?[\d.,]+)/g,'<mark>$1</mark>'):'<span class="mut">Sem observação do financeiro.</span>';
