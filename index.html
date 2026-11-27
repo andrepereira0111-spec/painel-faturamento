@@ -200,20 +200,19 @@ function render(){
   }
   if(tab==='mes'){
     const byV=(a,b)=>b.valor-a.valor,soma=L=>L.reduce((a,p)=>a+p.valor,0);
-    const af=P.filter(p=>p.situacao==='a_faturar').sort(byV),fn=P.filter(p=>p.pelaNF).sort(byV),fs=P.filter(p=>p.situacao==='faturado'&&!p.pelaNF).sort(byV),pm=P.filter(p=>p.situacao==='proximo_mes').sort(byV);
-    const este=soma(af)+soma(fn)+soma(fs),prox=soma(pm);
-    $('kmes').innerHTML=`<div class="card kpi acc"><span class="l">Fatura este mês</span><b>${R(este)}</b><span class="mut">${af.length+fn.length+fs.length} pedidos · ${R(soma(af))} ainda a faturar</span></div>`+
-      `<div class="card kpi"><span class="l"><i style="background:${C.proximo_mes}"></i>Fica para o mês que vem</span><b>${R(prox)}</b><span class="mut">${pm.length} pedidos · ${pm.filter(p=>p.faturarEm).length} com data de faturar marcada (${R(soma(pm.filter(p=>p.faturarEm)))})</span></div>`+
-      `<div class="card kpi"><span class="l"><i style="background:${C.faturado}"></i>Faturados pela NF (sem SIM no Monday)</span><b>${R(soma(fn))}</b><span class="mut">${fn.length} pedidos · já incluídos em "este mês"</span></div>`;
+    const af=P.filter(p=>p.situacao==='a_faturar').sort(byV),fs=P.filter(p=>p.situacao==='faturado').sort(byV),pm=P.filter(p=>p.situacao==='proximo_mes').sort(byV);
+    const este=soma(af)+soma(fs),prox=soma(pm);
+    $('kmes').innerHTML=`<div class="card kpi acc"><span class="l">Fatura este mês</span><b>${R(este)}</b><span class="mut">${af.length+fs.length} pedidos · ${R(soma(af))} ainda a faturar</span></div>`+
+      `<div class="card kpi"><span class="l"><i style="background:${C.proximo_mes}"></i>Fica para o mês que vem</span><b>${R(prox)}</b><span class="mut">${pm.length} pedidos · ${pm.filter(p=>p.faturarEm).length} com data de faturar marcada (${R(soma(pm.filter(p=>p.faturarEm)))})</span></div>`;
     $('h1').textContent='· '+R(este);$('h2').textContent='· '+R(prox);
     const lista=[];const linha=p=>{lista.push(p);return `<tr data-m="${lista.length-1}"><td>${esc(p.pedido)}</td><td class="l">${esc(p.cliente)}${p.faturarEm?`<br><span class="tag" style="background:${C.proximo_mes}">faturar em ${esc(p.faturarEm)}</span>`:''}${finDiv(p)}</td><td class="l">${esc(p.entrega)}</td><td class="l">${nfTxt(p)||'<span class="mut">—</span>'}</td><td>${R(p.valor)}</td></tr>`};
     const grupo=(t,L)=>L.length?`<tr class="grp"><td colspan="4">${t} · ${L.length}</td><td>${R(soma(L))}</td></tr>`+L.map(linha).join(''):'';
     const cab='<thead><tr><th>Pedido</th><th class="l">Cliente</th><th class="l">Entrega</th><th class="l">NF</th><th>Valor</th></tr></thead>';
-    $('t1').innerHTML=cab+'<tbody>'+grupo('A faturar (entregue, sem NF)',af)+grupo('Faturados pela NF · falta SIM no Monday',fn)+grupo('Já faturados',fs)+'</tbody><tfoot><tr><td colspan="4">Total este mês</td><td>'+R(este)+'</td></tr></tfoot>';
+    $('t1').innerHTML=cab+'<tbody>'+grupo('A faturar (entregue, sem NF)',af)+grupo('Já faturados',fs)+'</tbody><tfoot><tr><td colspan="4">Total este mês</td><td>'+R(este)+'</td></tr></tfoot>';
     $('t2').innerHTML=cab+'<tbody>'+(pm.length?grupo('Faturamento marcado na anotação',pm.filter(p=>p.faturarEm))+grupo('Ainda não entregues',pm.filter(p=>!p.faturarEm)):'<tr><td colspan="5" class="l mut">Nenhum pedido pendente para o mês que vem.</td></tr>')+'</tbody><tfoot><tr><td colspan="4">Total mês que vem</td><td>'+R(prox)+'</td></tr></tfoot>';
     window._mes=lista;
     const g=(n,L)=>L.map(p=>[p.faturarEm?n+' - faturar em '+p.faturarEm:n,p.pedido,p.cliente,p.entrega,nfTxt(p,1),p.valor,finTxt(p)]);
-    view={head:['Grupo','Pedido','Cliente','Entrega','NF','Valor','Financeiro'],rows:[],csv:[...g('Este mês - a faturar',af),...g('Este mês - faturado pela NF',fn),...g('Este mês - já faturado',fs),...g('Mês que vem',pm)]};
+    view={head:['Grupo','Pedido','Cliente','Entrega','NF','Valor','Financeiro'],rows:[],csv:[...g('Este mês - a faturar',af),...g('Este mês - já faturado',fs),...g('Mês que vem',pm)]};
     return;
   }
   if(tab==='exp'&&expSel===null){
