@@ -108,6 +108,7 @@ $('q').oninput=render;$('fs').onchange=render;
 const nfTxt=(p,plain)=>(p.nf||[]).map(n=>plain?(n.numero||n.arquivo):esc(n.numero||'NF')).join(', ');
 function group(rows,key){const m={};rows.forEach(p=>{const k=p[key];m[k]??={faturado:0,a_faturar:0,proximo_mes:0,outros:0,n:0};m[k][p.situacao]+=p.valor;m[k].n++});return Object.entries(m)}
 const tot=v=>v.faturado+v.a_faturar+v.proximo_mes+v.outros;
+const EMPRESAS=['SANTOS E ZANON','LOCBY'];   // opções da coluna EMPRESAS do Monday
 // Regra da NF: pedido com NF no Teams conta como faturado, mesmo sem SIM no Monday (SIM sem NF continua faturado)
 function aplicaNF(D){D.meses.forEach(m=>m.pedidos.forEach(p=>{if((p.nf||[]).length&&(p.situacao==='a_faturar'||p.situacao==='proximo_mes')){p.sitMonday=p.situacao;p.situacao='faturado';p.pelaNF=true}}))}
 const sitTxt=(p,NN)=>(NN||N)[p.situacao]+(p.pelaNF?' (pela NF)':'')+(p.faturarEm?' (faturar em '+p.faturarEm+')':'');
@@ -215,7 +216,9 @@ function render(){
       g.map(([k,v])=>[k,v.n,v.a_faturar,v.proximo_mes]),
       ['Total',pend.length,R(S.a_faturar),R(S.proximo_mes)]);
   }else if(tab==='emp'||tab==='com'){
-    const key=tab==='emp'?'empresa':'comercial',g=group(P,key).sort((a,b)=>tot(b[1])-tot(a[1]));
+    const key=tab==='emp'?'empresa':'comercial',g=group(P,key);
+    if(tab==='emp')EMPRESAS.filter(e=>!g.some(([k])=>k===e)).forEach(e=>g.push([e,{n:0,faturado:0,a_faturar:0,proximo_mes:0,outros:0}]));   // aparece mesmo zerada
+    g.sort((a,b)=>tot(b[1])-tot(a[1]));
     setTable([{t:tab==='emp'?'Empresa':'Comercial',l:1},'Pedidos','Faturado','A faturar','Próx. mês','Total'],
       g.map(([k,v])=>[esc(k),v.n,R(v.faturado),R(v.a_faturar),R(v.proximo_mes),R(tot(v))]),
       g.map(([k,v])=>[k,v.n,v.faturado,v.a_faturar,v.proximo_mes,tot(v)]),
