@@ -49,6 +49,8 @@ dialog::backdrop{background:#1e3a5f99}
 mark{background:#ffe9a8;padding:0 3px;border-radius:3px;font-weight:600}
 .duo{display:grid;grid-template-columns:repeat(auto-fit,minmax(480px,1fr));gap:12px;margin-top:12px;align-items:start}
 .duo h2{margin:0 0 8px;font-size:17px;color:var(--navy)}.duo h2 span{font:600 15px 'Source Sans 3',sans-serif;color:var(--mut);margin-left:6px}
+.obs{font-size:12px;color:var(--mut);margin-top:3px;min-width:200px;max-width:520px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:normal;overflow-wrap:anywhere;text-align:left}.obs b{color:var(--blue)}
+tr[data-m] td:first-child,tr[data-m] td:last-child{white-space:nowrap}
 tr.grp td{background:var(--bg);color:var(--navy);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.03em}
 .kpi.acc{border-left:4px solid var(--acc)}
 </style>
@@ -111,11 +113,14 @@ const tot=v=>v.faturado+v.a_faturar+v.proximo_mes+v.outros;
 const EMPRESAS=['SANTOS E ZANON','LOCBY'];   // opções da coluna EMPRESAS do Monday
 // Regra da NF: pedido com NF no Teams conta como faturado, mesmo sem SIM no Monday (SIM sem NF continua faturado)
 function aplicaNF(D){D.meses.forEach(m=>m.pedidos.forEach(p=>{if((p.nf||[]).length&&(p.situacao==='a_faturar'||p.situacao==='proximo_mes')){p.sitMonday=p.situacao;p.situacao='faturado';p.pelaNF=true}}))}
+// observação do Financeiro (coluna AV da planilha): aparece em todas as listas e no CSV
+const finTxt=p=>String(p.financeiro||'').replace(/\s+/g,' ').trim();
+const finDiv=p=>{const t=finTxt(p);return `<div class="obs" title="${esc(t)}"><b>Financeiro:</b> ${t?esc(t):(p.detalhe||[]).length?'sem observação':'pedido sem lançamento na planilha'}</div>`};
 const sitTxt=(p,NN)=>(NN||N)[p.situacao]+(p.pelaNF?' (pela NF)':'')+(p.faturarEm?' (faturar em '+p.faturarEm+')':'');
 // Anotação "faturar em dd/mm" (ou "faturar em dezembro", "faturar no próximo mês") no Financeiro, nos campos da planilha ou no texto da NF:
 // se a data cai depois do mês do quadro, o pedido vai para o próximo mês, mesmo com NF. SIM no Monday não é alterado, só avisado.
 const MESES=['janeiro','fevereiro','marco','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
-const LIGA='(?:\\s*(?:somente|apenas|so|em|no|na|o|a partir de|a partir do|do|para|pra|p\\/|dia|data|mes de|:|-))*\\s*';
+const LIGA='(?:\\s*(?:somente|apenas|so|em|no|na|o|a partir de|a partir do|do|para|pra|p\\/|dia|data|mes de|e envio|:|-))*\\s*';
 const RX_DATA=new RegExp('\\bfatur(?:ar|amento|a-lo)\\b'+LIGA+'(\\d{1,2})\\/(\\d{1,2})(?:\\/(\\d{4}|\\d{2}))?(?![\\d\\/])');
 const RX_MES=new RegExp('\\bfatur(?:ar|amento|a-lo)\\b'+LIGA+'('+MESES.join('|')+'|proximo mes|mes que vem)\\b');
 const semAcento=t=>String(t).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ');
@@ -199,14 +204,14 @@ function render(){
       `<div class="card kpi"><span class="l"><i style="background:${C.proximo_mes}"></i>Fica para o mês que vem</span><b>${R(prox)}</b><span class="mut">${pm.length} pedidos · ${pm.filter(p=>p.faturarEm).length} com data de faturar marcada (${R(soma(pm.filter(p=>p.faturarEm)))})</span></div>`+
       `<div class="card kpi"><span class="l"><i style="background:${C.faturado}"></i>Faturados pela NF (sem SIM no Monday)</span><b>${R(soma(fn))}</b><span class="mut">${fn.length} pedidos · já incluídos em "este mês"</span></div>`;
     $('h1').textContent='· '+R(este);$('h2').textContent='· '+R(prox);
-    const lista=[];const linha=p=>{lista.push(p);return `<tr data-m="${lista.length-1}"><td>${esc(p.pedido)}</td><td class="l">${esc(p.cliente)}${p.faturarEm?`<br><span class="tag" style="background:${C.proximo_mes}">faturar em ${esc(p.faturarEm)}</span>`:''}</td><td class="l">${esc(p.entrega)}</td><td class="l">${nfTxt(p)||'<span class="mut">—</span>'}</td><td>${R(p.valor)}</td></tr>`};
+    const lista=[];const linha=p=>{lista.push(p);return `<tr data-m="${lista.length-1}"><td>${esc(p.pedido)}</td><td class="l">${esc(p.cliente)}${p.faturarEm?`<br><span class="tag" style="background:${C.proximo_mes}">faturar em ${esc(p.faturarEm)}</span>`:''}${finDiv(p)}</td><td class="l">${esc(p.entrega)}</td><td class="l">${nfTxt(p)||'<span class="mut">—</span>'}</td><td>${R(p.valor)}</td></tr>`};
     const grupo=(t,L)=>L.length?`<tr class="grp"><td colspan="4">${t} · ${L.length}</td><td>${R(soma(L))}</td></tr>`+L.map(linha).join(''):'';
     const cab='<thead><tr><th>Pedido</th><th class="l">Cliente</th><th class="l">Entrega</th><th class="l">NF</th><th>Valor</th></tr></thead>';
     $('t1').innerHTML=cab+'<tbody>'+grupo('A faturar (entregue, sem NF)',af)+grupo('Faturados pela NF · falta SIM no Monday',fn)+grupo('Já faturados',fs)+'</tbody><tfoot><tr><td colspan="4">Total este mês</td><td>'+R(este)+'</td></tr></tfoot>';
     $('t2').innerHTML=cab+'<tbody>'+(pm.length?grupo('Faturamento marcado na anotação',pm.filter(p=>p.faturarEm))+grupo('Ainda não entregues',pm.filter(p=>!p.faturarEm)):'<tr><td colspan="5" class="l mut">Nenhum pedido pendente para o mês que vem.</td></tr>')+'</tbody><tfoot><tr><td colspan="4">Total mês que vem</td><td>'+R(prox)+'</td></tr></tfoot>';
     window._mes=lista;
-    const g=(n,L)=>L.map(p=>[p.faturarEm?n+' - faturar em '+p.faturarEm:n,p.pedido,p.cliente,p.entrega,nfTxt(p,1),p.valor]);
-    view={head:['Grupo','Pedido','Cliente','Entrega','NF','Valor'],rows:[],csv:[...g('Este mês - a faturar',af),...g('Este mês - faturado pela NF',fn),...g('Este mês - já faturado',fs),...g('Mês que vem',pm)]};
+    const g=(n,L)=>L.map(p=>[p.faturarEm?n+' - faturar em '+p.faturarEm:n,p.pedido,p.cliente,p.entrega,nfTxt(p,1),p.valor,finTxt(p)]);
+    view={head:['Grupo','Pedido','Cliente','Entrega','NF','Valor','Financeiro'],rows:[],csv:[...g('Este mês - a faturar',af),...g('Este mês - faturado pela NF',fn),...g('Este mês - já faturado',fs),...g('Mês que vem',pm)]};
     return;
   }
   if(tab==='exp'){
@@ -229,21 +234,21 @@ function render(){
     const L=TODOS.filter(p=>(!f||p.situacao===f||(f==='semvalor'&&p.valor===0&&p.situacao!=='cancelado')||(f==='nfsem'&&p.situacao==='faturado'&&!(p.nf||[]).length)||(f==='nfnao'&&p.pelaNF)||(f==='adiado'&&p.faturarEm)||(f==='aviso'&&p.avisoData)||(f==='fatpend'&&p.situacao==='faturado'&&!p.pelaNF&&p.entrega.toUpperCase()!=='ENTREGUE'))&&(!f&&p.situacao==='cancelado'?false:true)&&(!q||(p.pedido+p.cliente).toLowerCase().includes(q))).sort((a,b)=>b.valor-a.valor);
     const NN={...N,cancelado:'Cancelado'};
     setTable([{t:'Pedido',l:1},{t:'Cliente',l:1},{t:'Empresa',l:1},{t:'Comercial',l:1},{t:'Entrega',l:1},{t:'Situação',l:1},{t:'NF',l:1},'Valor'],
-      L.map(p=>[esc(p.pedido),esc(p.cliente),esc(p.empresa),esc(p.comercial),esc(p.entrega),`<span class="tag" style="background:${C[p.situacao]||'var(--bad)'}">${sitTxt(p,NN)}</span>`,nfTxt(p)||'<span class="mut">—</span>',R(p.valor)]),
+      L.map(p=>[esc(p.pedido),esc(p.cliente)+finDiv(p),esc(p.empresa),esc(p.comercial),esc(p.entrega),`<span class="tag" style="background:${C[p.situacao]||'var(--bad)'}">${sitTxt(p,NN)}</span>`,nfTxt(p)||'<span class="mut">—</span>',R(p.valor)]),
       L.map(p=>[p.pedido,p.cliente,p.empresa,p.comercial,p.entrega,sitTxt(p,NN),nfTxt(p,1),p.valor]),null,L);
   }else if(tab==='rt'){
     const q=$('q').value.toLowerCase(),L=RT.filter(p=>!q||(p.pedido+p.cliente).toLowerCase().includes(q)).sort((a,b)=>b.valor-a.valor);
     const SR={faturado:0,a_faturar:0,proximo_mes:0,outros:0};RT.forEach(p=>SR[p.situacao]+=p.valor);
     $('sub').textContent=m.nome+' '+m.mes.slice(0,4)+' · RT: '+RT.length+' pedidos · '+['faturado','a_faturar','proximo_mes'].map(k=>N[k]+' '+R(SR[k])).join(' · ');
     setTable([{t:'Pedido',l:1},{t:'Cliente',l:1},{t:'Empresa',l:1},{t:'Comercial',l:1},{t:'Entrega',l:1},{t:'Situação',l:1},{t:'NF',l:1},'Valor'],
-      L.map(p=>[esc(p.pedido),esc(p.cliente),esc(p.empresa),esc(p.comercial),esc(p.entrega),`<span class="tag" style="background:${C[p.situacao]||'var(--bad)'}">${sitTxt(p)}</span>`,nfTxt(p)||'<span class="mut">—</span>',R(p.valor)]),
+      L.map(p=>[esc(p.pedido),esc(p.cliente)+finDiv(p),esc(p.empresa),esc(p.comercial),esc(p.entrega),`<span class="tag" style="background:${C[p.situacao]||'var(--bad)'}">${sitTxt(p)}</span>`,nfTxt(p)||'<span class="mut">—</span>',R(p.valor)]),
       L.map(p=>[p.pedido,p.cliente,p.empresa,p.comercial,p.entrega,sitTxt(p),nfTxt(p,1),p.valor]),
       ['Total RT','','','','','','',R(L.reduce((a,p)=>a+p.valor,0))],L);
   }else if(tab==='fora'){
     const q=$('q').value.toLowerCase(),L=FORA.filter(p=>!q||(p.pedido+p.cliente).toLowerCase().includes(q)).sort((a,b)=>b.valor-a.valor||grupoFora(a).localeCompare(grupoFora(b))||a.pedido.localeCompare(b.pedido));
     $('sub').textContent=m.nome+' '+m.mes.slice(0,4)+' · não faturados pela produção: '+FORA.length+' pedidos · '+Object.entries(NF_PROD).map(([k,n])=>n+' '+FORA.filter(p=>grupoFora(p)===k).length).join(' · ');
     setTable([{t:'Pedido',l:1},{t:'Cliente',l:1},{t:'Grupo',l:1},{t:'Comercial',l:1},{t:'Entrega',l:1},{t:'NF',l:1},'Valor lançado'],
-      L.map(p=>[esc(p.pedido),esc(p.cliente),NF_PROD[grupoFora(p)],esc(p.comercial),esc(p.entrega),nfTxt(p)||'<span class="mut">—</span>',R(p.valor)]),
+      L.map(p=>[esc(p.pedido),esc(p.cliente)+finDiv(p),NF_PROD[grupoFora(p)],esc(p.comercial),esc(p.entrega),nfTxt(p)||'<span class="mut">—</span>',R(p.valor)]),
       L.map(p=>[p.pedido,p.cliente,NF_PROD[grupoFora(p)],p.comercial,p.entrega,nfTxt(p,1),p.valor]),
       ['Total ('+L.length+')','','','','','',R(L.reduce((a,p)=>a+p.valor,0))],L);
   }
@@ -272,8 +277,9 @@ function openPed(p){
 }
 $('dl').onclick=()=>{
   const heads=view.head.map(h=>h.t||h); // view.csv já vem na ordem escolhida
+  const linhas=view.items?view.csv.map((r,i)=>[...r,finTxt(view.items[i])]):view.csv;if(view.items)heads.push('Financeiro');
   const cell=c=>{c=typeof c==='number'?String(c).replace('.',','):String(c);return /[;"\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c};
-  const txt='﻿'+[heads,...view.csv].map(r=>r.map(cell).join(';')).join('\r\n');
+  const txt='﻿'+[heads,...linhas].map(r=>r.map(cell).join(';')).join('\r\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:'text/csv;charset=utf-8'}));
   a.download=`faturamento-${tab}-${cur}.csv`;a.click();URL.revokeObjectURL(a.href);
 };
