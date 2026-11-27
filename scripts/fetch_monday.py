@@ -85,9 +85,12 @@ if __name__ == "__main__":
     except Exception: prev = {"meses": []}
     old_det = {p["pedido"]: (p.get("detalhe", []), p.get("financeiro", "")) for m in prev["meses"] for p in m["pedidos"]}
     sheet = {}
-    if os.environ.get("SHEET_CSV_URL"):
-        try: sheet = load_sheet(urllib.request.urlopen(os.environ["SHEET_CSV_URL"], timeout=60).read().decode("utf-8"))
-        except Exception as e: print("planilha indisponivel, mantendo o detalhe anterior:", type(e).__name__)  # nao parar o Monday
+    if os.environ.get("SHEET_CSV_URL"):  # o ::notice/::warning aparece na pagina da execucao (sem dados nem link)
+        try:
+            sheet = load_sheet(urllib.request.urlopen(os.environ["SHEET_CSV_URL"], timeout=60).read().decode("utf-8"))
+            print("::notice title=Planilha::lida com sucesso" if sheet else "::warning title=Planilha::lida, mas sem pedidos")
+        except Exception as e: print("::warning title=Planilha::indisponivel, mantido o detalhe anterior:", type(e).__name__)  # nao parar o Monday
+    else: print("::warning title=Planilha::segredo SHEET_CSV_URL nao cadastrado")
     try: nfmap = decrypt(json.load(open("nf.json", encoding="utf-8")), senha)["nf"]
     except Exception: nfmap = {}
     out = build([(b, fetch_items(tok, b["id"])) for b in BOARDS], sheet, old_det, nfmap)
